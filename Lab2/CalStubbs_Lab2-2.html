@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>My First Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        #legend {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 110px;
+            background: #fff;
+            margin-right: 20px;
+            margin-bottom: 40px;
+            padding: 10px 20px 10px 10px;
+            border-radius: 3px;
+            text-align: center;
+}
+
+/* Each row for a magnitude value. */
+        .break {
+            position: relative;
+            margin: 0;
+            padding: 0;
+        }
+
+/* The circular symbol. */
+        .dot {
+            display: inline-block;
+            margin-top: 5px;
+            border-radius: 50%;
+            opacity: 0.6;
+        }
+
+/* Label next to the symbol. */
+        .dot-label {
+            position: absolute;
+            top: 0;
+            right: 0;
+            font-style: italic;
+        }
+
+/* Link color within the legend. */
+        #legend a {
+            color: black;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="legend"></div>
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoiY2Fsc3RicyIsImEiOiJjbXV4MGF4NTQwMGRxMnlvZ2wwOWo1M3RhIn0.n6HrgH_9Pwq8AOwT_IU39A';
+        const mymap = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/light-v11',
+            projection: 'globe',
+            center: [40, 20],
+            zoom: 1
+        });
+        mymap.on('style.load', () => {
+            mymap.setFog({});
+        });
+        
+        mymap.on('load', () => {
+            mymap.addSource('population', {
+                type: 'geojson',
+                data: 'data/world-cities.geojson'
+            });
+
+            mymap.addLayer({
+                id: 'population-layer',
+                type: 'circle',
+                source: 'population',
+                paint: {
+                    'circle-radius': [
+                        'step', ['get', 'population'],
+                        radii[0],
+                        breaks[0], radii[1],
+                        breaks[1], radii[2],
+                        breaks[2], radii[3],
+                        breaks[3], radii[4]
+                    ],
+                    'circle-color': [
+                        'step', ['get', 'population'],
+                        colors[0],
+                        breaks[0], colors[1],
+                        breaks[1], colors[2],
+                        breaks[2], colors[3],
+                        breaks[3], colors[4]
+                    ],
+                    'circle-opacity': 0.85
+                },
+                layout: {
+                    'circle-sort-key': ['get', 'population']
+                }
+            });
+     mymap.on('click', 'population-layer', (event) => {
+                const feature = event.features[0];
+                const props = feature.properties;
+                const coordinates = feature.geometry.coordinates.slice(0, 2);
+                const pop = Number(props.population).toLocaleString();
+
+                new mapboxgl.Popup()
+                    .setLngLat(coordinates)
+                    .setHTML('<strong>' + props.accentcity + '</strong> (' +
+                        props.country.toUpperCase() + ')<br>' +
+                        '<strong>Population:</strong> ' + pop)
+                    .addTo(mymap);
+            });
+
+            mymap.on('mouseenter', 'population-layer', () => {
+                mymap.getCanvas().style.cursor = 'pointer';
+            });
+            mymap.on('mouseleave', 'population-layer', () => {
+                mymap.getCanvas().style.cursor = '';
+            });
+        });
+    
+        const legend = document.getElementById('legend');
+        const classLabels = ['15k – 100k', '100k – 1M', '1M – 5M', '5M – 10M', '10M+'];
+        const labels = ['<strong>City population</strong>'];
+
+        for (let i = classLabels.length - 1; i >= 0; i--) {
+            const diameter = 2 * radii[i];
+            labels.push(
+                '<p class="break"><span class="dot-holder"><i class="dot" style="background:' +
+                colors[i] + '; width:' + diameter + 'px; height:' + diameter +
+                'px;"></i></span><span class="dot-label">' + classLabels[i] + '</span></p>'
+            );
+        }
+
+        const source =
+            '<p style="text-align:right; font-size:9pt; margin:6px 0 0;">Source: ' +
+            '<a href="https://www.naturalearthdata.com/">Natural Earth</a></p>';
+
+        legend.innerHTML = labels.join('') + source;
+    </script>
+</body>
+</html>
