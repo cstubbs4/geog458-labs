@@ -1,0 +1,6 @@
+.DS_Store
+**/metatiles/
+*.tif
+*.tif.aux.xml
+*.aux.xml
+lab3/README.html

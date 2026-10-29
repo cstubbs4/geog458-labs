@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lab 3: Regional Trails and Terrain</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.15.0/dist/maplibre-gl.css">
+  <style>
+    body { margin: 0; font: 14px/1.5 Arial, sans-serif; color: #182e3a; }
+    #map { position: absolute; inset: 0; }
+    #panel { position: absolute; top: 12px; left: 12px; padding: 16px;
+      width: 260px; max-width: calc(100% - 100px); background: white;
+      max-height: calc(100% - 80px); overflow: auto; border-radius: 6px; }
+    h1 { margin: 0 0 8px; font-size: 19px; }
+    p { margin: 8px 0; }
+    .ramp { height: 14px; }
+    .values { display: flex; justify-content: space-between; }
+    .maplibregl-popup-content { white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <section id="panel">
+    <h1 id="map-title"></h1>
+    <p id="map-subtitle"></p>
+    <p id="status">Step 1: map frame ready.</p>
+    <div id="surface-control" hidden>
+      <label><input id="show-surface" type="checkbox" checked> <span id="surface-label"></span></label>
+    </div>
+    <div id="vector-control" hidden>
+      <label><input id="show-vector" type="checkbox" checked> <span id="vector-label"></span></label>
+    </div>
+    <div id="legend" hidden>
+      <p><strong id="legend-title"></strong></p>
+      <div class="ramp" id="legend-ramp"></div>
+      <div class="values" id="legend-values"></div>
+      <p id="legend-note"></p>
+    </div>
+  </section>
+ 
+  <script type="module">
+    import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.15.0/dist/maplibre-gl.mjs';
+ 
+    // =====================================================================
+    // EDIT THIS BLOCK ONLY. Everything below it reads from these settings.
+    // Every line marked TODO must match your own exports and data.
+    // =====================================================================
+    const CONFIG = {
+      title: 'Regional Trails and Terrain',
+      subtitle: 'Seattle and King County lowlands | NASA SRTM elevation, King County Parks trails',
+ 
+      // Study area: must match the QGIS extent you exported with QMetaTiles
+      // (Seattle, Bellevue, Renton, Kent: where the elevation tile and King County trails overlap)
+      // bounds = [[west, south], [east, north]]
+      bounds: [[-122.45, 47.30], [-122.02, 47.78]],
+      center: [-122.24, 47.55],
+      zoom: 11,
+      minZoom: 10,   // export zoom 10-14 in QMetaTiles for both pyramids
+      maxZoom: 14,
+ 
+      // Tile pyramid 1: your second Mapbox Studio basemap
+      basemapFolder: 'assets/mapbox-independent',
+ 
+      // Tile pyramid 2: elevation raster (exported with transparency 100)
+      themeFolder: 'assets/elevation',
+      themeLabel: 'Show elevation',
+      themeOpacity: 0.65,
+      themeAttribution: 'Elevation: NASA SRTM 1 Arc-Second Global (USGS EarthExplorer); map by Cal Stubbs',
+ 
+      // Legend: must match the QGIS Singleband pseudocolor stops
+      legendTitle: 'Elevation (meters)',
+      legendStops:  [0, 100, 200, 300, '400+'],
+      legendColors: ['#1a9641', '#a6d96a', '#ffffbf', '#fdae61', '#a6611a'],
+      legendNote: 'Ground elevation from SRTM (~30 m pixels). Sea level shown as transparent.',
+ 
+      // Related vector data
+      vectorPath: 'data/kc_trails.geojson',
+      vectorType: 'line',
+      vectorLabel: 'Show regional trails',
+      vectorColor: '#4b2a7b',
+      vectorAttribution: 'Trails: King County GIS Open Data (King County Parks)',
+ 
+      // Popup: the first entry is used as the popup heading (no label).
+      // 'field' must match the GeoJSON property names exactly (case-sensitive).
+      popupFields: [
+        { field: 'Trail_Name' },
+        { label: 'Surface', field: 'Surf_Type' },
+        { label: 'Trail site', field: 'SiteName' },
+        { label: 'Owner', field: 'Owner' }
+      ]
+    };
+    // =====================================================================
+ 
+    const [[west, south], [east, north]] = CONFIG.bounds;
+    const sourceBounds = [west, south, east, north];
+ 
+    // Fill the panel text and legend from CONFIG
+    document.title = CONFIG.title;
+    document.getElementById('map-title').textContent = CONFIG.title;
+    document.getElementById('map-subtitle').textContent = CONFIG.subtitle;
+    document.getElementById('surface-label').textContent = CONFIG.themeLabel;
+    document.getElementById('vector-label').textContent = CONFIG.vectorLabel;
+    document.getElementById('legend-title').textContent = CONFIG.legendTitle;
+    document.getElementById('legend-note').textContent = CONFIG.legendNote;
+    document.getElementById('legend-ramp').style.background =
+      'linear-gradient(to right, ' + CONFIG.legendColors.join(', ') + ')';
+    const valuesBox = document.getElementById('legend-values');
+    CONFIG.legendStops.forEach((value) => {
+      const span = document.createElement('span');
+      span.textContent = value;
+      valuesBox.appendChild(span);
+    });
+ 
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: {
+        version: 8,
+        sources: {},
+        layers: [{ id: 'background', type: 'background',
+          paint: { 'background-color': '#edf1f0' } }]
+      },
+      center: CONFIG.center,
+      zoom: CONFIG.zoom,
+      minZoom: CONFIG.minZoom,
+      maxZoom: CONFIG.maxZoom,
+      maxBounds: CONFIG.bounds
+    });
+    map.addControl(new maplibregl.NavigationControl());
+    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }));
+ 
+    map.on('error', (event) => {
+      document.getElementById('status').textContent =
+        'Load error: check the file path and browser Console.';
+      console.error(event.error);
+    });
+ 
+    map.on('load', () => {
+      // Step 2: basemap tiles (second Mapbox Studio style)
+      map.addSource('basemap-tiles', {
+        type: 'raster',
+        tiles: [CONFIG.basemapFolder + '/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        scheme: 'xyz',
+        minzoom: CONFIG.minZoom,
+        maxzoom: CONFIG.maxZoom,
+        bounds: sourceBounds,
+        attribution: '© Mapbox © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      });
+      map.addLayer({
+        id: 'basemap',
+        type: 'raster',
+        source: 'basemap-tiles',
+        paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 }
+      });
+ 
+      // Step 3: thematic raster tiles
+      map.addSource('theme-tiles', {
+        type: 'raster',
+        tiles: [CONFIG.themeFolder + '/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        scheme: 'xyz',
+        minzoom: CONFIG.minZoom,
+        maxzoom: CONFIG.maxZoom,
+        bounds: sourceBounds,
+        attribution: CONFIG.themeAttribution
+      });
+      map.addLayer({
+        id: 'theme-surface',
+        type: 'raster',
+        source: 'theme-tiles',
+        paint: { 'raster-opacity': CONFIG.themeOpacity, 'raster-fade-duration': 0 }
+      });
+ 
+      document.getElementById('surface-control').hidden = false;
+      document.getElementById('legend').hidden = false;
+      document.getElementById('show-surface').addEventListener('change', (event) => {
+        map.setLayoutProperty('theme-surface', 'visibility',
+          event.target.checked ? 'visible' : 'none');
+        document.getElementById('legend').hidden = !event.target.checked;
+      });
+ 
+      // Step 4: related vector data and popups
+      map.addSource('vector-data', {
+        type: 'geojson',
+        data: CONFIG.vectorPath,
+        attribution: CONFIG.vectorAttribution
+      });
+ 
+      // Points use circles, lines use lines, polygons use a fill plus an outline
+      const clickLayers = [];
+      if (CONFIG.vectorType === 'line') {
+        map.addLayer({
+          id: 'vector-features',
+          type: 'line',
+          source: 'vector-data',
+          paint: { 'line-color': CONFIG.vectorColor, 'line-width': 3 }
+        });
+        clickLayers.push('vector-features');
+      } else if (CONFIG.vectorType === 'polygon') {
+        map.addLayer({
+          id: 'vector-features',
+          type: 'fill',
+          source: 'vector-data',
+          paint: { 'fill-color': CONFIG.vectorColor, 'fill-opacity': 0.25 }
+        });
+        map.addLayer({
+          id: 'vector-outline',
+          type: 'line',
+          source: 'vector-data',
+          paint: { 'line-color': CONFIG.vectorColor, 'line-width': 1.5 }
+        });
+        clickLayers.push('vector-features');
+      } else {
+        map.addLayer({
+          id: 'vector-features',
+          type: 'circle',
+          source: 'vector-data',
+          paint: {
+            'circle-radius': 6,
+            'circle-color': CONFIG.vectorColor,
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 2
+          }
+        });
+        clickLayers.push('vector-features');
+      }
+ 
+      map.on('click', 'vector-features', (event) => {
+        const props = event.features[0].properties;
+        const lines = CONFIG.popupFields.map((item) => {
+          const value = props[item.field] ?? 'n/a';
+          return (item.label ? item.label + ': ' : '') + value + (item.suffix || '');
+        });
+        new maplibregl.Popup()
+          .setLngLat(event.lngLat)
+          .setText(lines.join('\n'))
+          .addTo(map);
+      });
+      map.on('mouseenter', 'vector-features', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'vector-features', () => {
+        map.getCanvas().style.cursor = '';
+      });
+
+      document.getElementById('vector-control').hidden = false;
+      document.getElementById('show-vector').addEventListener('change', (event) => {
+        const visibility = event.target.checked ? 'visible' : 'none';
+        map.setLayoutProperty('vector-features', 'visibility', visibility);
+        if (map.getLayer('vector-outline')) {
+          map.setLayoutProperty('vector-outline', 'visibility', visibility);
+        }
+      });
+
+      document.getElementById('status').textContent =
+        'Click a feature to read its values; use the switches to compare layers.';
+    });
+  </script>
+</body>
+</html>
