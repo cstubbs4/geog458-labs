@@ -1,0 +1,9 @@
+{
+  "time_origin_utc": "2021-12-19T00:00:00Z",
+  "time_unit": "seconds since time_origin_utc",
+  "first_report_utc": "2021-12-19T00:00:01+00:00",
+  "last_report_utc": "2022-01-21T23:59:53+00:00",
+  "vessels": 646,
+  "observations": 697410,
+  "source_csv": "ais.csv"
+}
